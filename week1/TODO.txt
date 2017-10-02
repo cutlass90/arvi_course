@@ -1,0 +1,11 @@
+1. Write image loader with preprocessing.
+    1.1 normilize: find mean and std of dataset
+    1.2 resize to 224 x 224 x 3
+    1.3 write reader, that return image and appropriate class as np.array
+    1.4 May be add augmentation.
+2. Write trainer.
+    Module that using image loader train network, layer by layer.
+3. Write model that using pretrained model perform search top n similar images and
+    get image class.
+4. Write model that using image embeddings perform dimentionality reducing,
+    and visualize dataset on 2D or 3D.
