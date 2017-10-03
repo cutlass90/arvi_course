@@ -164,7 +164,7 @@ def create_image_lists(image_dir, validation_pct=10):
         dir_name = os.path.basename(sub_dir)
         if dir_name == image_dir:
             continue
-        print("Looking for images in '{}'".format(dir_name))
+        # print("Looking for images in '{}'".format(dir_name))
         for extension in VALID_IMAGE_FORMATS:
             file_glob = os.path.join(image_dir, dir_name, '*.' + extension)
             file_list.extend(glob.glob(file_glob))
@@ -220,16 +220,22 @@ def as_bytes(bytes_or_text, encoding='utf-8'):
                         (bytes_or_text,))
 
 def get_generators(image_lists, config):
-    train_datagen = CustomImageDataGenerator(rescale=1. / 255,
-                                             horizontal_flip=True)
 
-    test_datagen = CustomImageDataGenerator(rescale=1. / 255)
+    train_datagen = CustomImageDataGenerator(rotation_range=45,
+                                             width_shift_range=0.1,
+                                             height_shift_range=0.1,
+                                             zoom_range=0.2,
+                                             channel_shift_range=0.1,
+                                             horizontal_flip=True,
+                                             vertical_flip=True)
+
+    test_datagen = CustomImageDataGenerator()
 
     train_generator = train_datagen.flow_from_image_lists(
         image_lists=image_lists,
         category='training',
         image_dir=config.data.path_to_data,
-        target_size=(config.data.img_height, config.data.img_weight),
+        target_size=(config.data.img_height, config.data.img_width),
         batch_size=config.data.batch_size,
         class_mode='categorical')
 
@@ -237,7 +243,7 @@ def get_generators(image_lists, config):
         image_lists=image_lists,
         category='validation',
         image_dir=config.data.path_to_data,
-        target_size=(config.data.img_height, config.data.img_weight),
+        target_size=(config.data.img_height, config.data.img_width),
         batch_size=config.data.batch_size,
         class_mode='categorical')
 
@@ -363,7 +369,7 @@ class ImageListIterator(Iterator):
                 self.filenames.append(img_path)
                 i += 1
 
-        print("Found {} {} files".format(len(self.filenames), category))
+        # print("Found {} {} files".format(len(self.filenames), category))
         super(ImageListIterator, self).__init__(self.samples, batch_size, shuffle,
                                                 seed)
 
@@ -446,3 +452,10 @@ def get_image_path(image_lists, label_name, index, image_dir, category):
     sub_dir = label_lists['dir']
     full_path = os.path.join(image_dir, sub_dir, base_name)
     return full_path
+
+def mock_generator(config):
+    while True:
+        img = np.random.random([config.data.batch_size, 224, 224, 3])
+        targets = np.zeros([config.data.batch_size, 1000])
+        targets[:, 0] = 1
+        yield (img, targets)
