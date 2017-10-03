@@ -1,202 +1,52 @@
+# -*- coding: utf-8 -*-
+"""Train model using transfer learning."""
 import os
-import fnmatch
-from operator import itemgetter
-import math
 import re
-import hashlib
-import warnings
 import glob
-import six
+import hashlib
+import argparse
+import warnings
 
+import six
 import numpy as np
+import tensorflow as tf
+# from tensorflow.python.platform import gfile
+from keras.models import Model
 from keras import backend as K
-from keras.preprocessing import image
-from keras.applications.vgg19 import preprocess_input
+from keras.optimizers import SGD
+from keras.layers import Dense, GlobalAveragePooling2D, Input
+from keras.applications.inception_v3 import InceptionV3
 from keras.preprocessing.image import (ImageDataGenerator, Iterator,
                                        array_to_img, img_to_array, load_img)
+from keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
 
+RANDOM_SEED = 0
 MAX_NUM_IMAGES_PER_CLASS = 2 ** 27 - 1  # ~134M
 VALID_IMAGE_FORMATS = frozenset(['jpg', 'jpeg', 'JPG', 'JPEG'])
+# we chose to train the top 2 inception blocks
+BATCH_SIZE = 100
+TRAINABLE_LAYERS = 172
+INCEPTIONV3_BASE_LAYERS = len(InceptionV3(weights=None, include_top=False).layers)
 
+STEPS_PER_EPOCH = 625
+VALIDATION_STEPS = 100
+MODEL_INPUT_WIDTH = 299
+MODEL_INPUT_HEIGHT = 299
+MODEL_INPUT_DEPTH = 3
+FC_LAYER_SIZE = 1024
 
-def scaled_exp_decay(start: float, end: float, n_iter: int,
-               current_iter: int) -> float:
-    """ Exponentially modifies value from start to end.
+# Helper: Save the model.
+checkpointer = ModelCheckpoint(
+    filepath='./output/checkpoints/inception.{epoch:03d}-{val_loss:.2f}.hdf5',
+    verbose=1,
+    save_best_only=True)
 
-    Args:
-        start: float, initial value
-        end: flot, final value
-        n_iter: int, total number of iterations
-        current_iter: int, current iteration
-    """
-    b = math.log(start/end, n_iter)
-    a = start*math.pow(1, b)
-    value = a/math.pow((current_iter+1), b)
-    return value
+# Helper: Stop when we stop learning.
+early_stopper = EarlyStopping(patience=10)
 
-def linear_decay(start: float, end: float, n_iter: int,
-           current_iter: int) -> float:
-    """ Linear modifies value from start to end.
+# Helper: TensorBoard
+tensorboard = TensorBoard(log_dir='./output/')
 
-    Args:
-        start: float, initial value
-        end: flot, final value
-        n_iter: int, total number of iterations
-        current_iter: int, current iteration
-    """
-    return (end - start)/n_iter*current_iter + start
-
-
-
-def _get_fields(attr):
-    if isinstance(attr, Config):
-        return [getattr(attr, k) for k in
-                sorted(attr.__dict__.keys())]
-    else:
-        return [attr]
-
-
-class Config:
-
-    def __init__(self, **kwargs):
-        """ Init config class with local configurations provided via kwargs.
-            Provide scope field to mark config as main.
-        """
-
-        for name, attr in kwargs.items():
-            setattr(self, name, attr)
-
-        if 'scope' in kwargs.keys():
-            self.is_main = True
-
-            # collect all fields from all configs and regular kwargs
-            fields = (_get_fields(attr) for name, attr in
-                      sorted(kwargs.items(), key=itemgetter(0))
-                      if not name == "scope")
-
-            self.identifier_fields = sum(fields, [])
-
-    @property
-    def identifier(self):
-        if self.is_main:
-            fields = "_".join(self._process_attr(name)
-                              for name in self.identifier_fields)
-            return self.scope + "_" + fields
-        else:
-            raise AttributeError("There is no field `scope` in this config")
-
-    def _process_attr(self, attr):
-        if isinstance(attr, (int, float, str)):
-            return str(attr)
-        elif isinstance(attr, (list, tuple)):
-            return 'x'.join(str(a) for a in attr)
-        elif isinstance(attr, bool):
-            if attr:
-                return 'YES{}'.format(str(attr))
-            else:
-                return 'NO{}'.format(str(attr))
-        else:
-            raise TypeError('Wrong dtype.')
-
-
-def lr_scheduler(current_epoch, epochs):
-    edge = epochs // 3
-    if current_epoch < current_epoch:
-        return linear_decay(1e-5, 1e-3, edge, current_epoch)
-    else:
-        return linear_decay(1e-3, 1e-5, epochs, current_epoch)
-
-def find_files(path: str, filename_pattern: str, sort: bool = True) -> list:
-    """Finds all files of type `filename_pattern`
-    in directory and subdirectories paths.
-
-    Args:
-        path: str, directory to search files.
-        filename_pattern: regular expression to specify file type.
-        sort: bool, whether to sort files list. Defaults to True.
-
-    Returns: list of found files.
-    """
-    files = list()
-    for root, _, filenames in os.walk(path):
-        for filename in fnmatch.filter(filenames, filename_pattern):
-            files.append(os.path.join(root, filename))
-    if sort:
-        files.sort()
-    return files
-
-def read_dirs_names(path):
-    """ Return list with dirs names for provided path. """
-    return [name for name in os.listdir(path) if os.path.isdir(name)]
-
-############################# DATA PROCESSING ##################################
-def preprocess_img(img):
-    """ Load and preprocess one image. """
-    img = image.img_to_array(image.load_img(img, target_size=(224, 224)))
-    img = preprocess_input(img)
-    return img
-################################################################################
-
-
-# https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/image_retraining/retrain.py
-def create_image_lists(image_dir, validation_pct=10):
-    """Builds a list of training images from the file system.
-
-    Analyzes the sub folders in the image directory, splits them into stable
-    training, testing, and validation sets, and returns a data structure
-    describing the lists of images for each label and their paths.
-
-    # Arguments
-        image_dir: string path to a folder containing subfolders of images.
-        validation_pct: integer percentage of images reserved for validation.
-
-    # Returns
-        dictionary of label subfolder, with images split into training
-        and validation sets within each label.
-    """
-    if not os.path.isdir(image_dir):
-        raise ValueError("Image directory {} not found.".format(image_dir))
-    image_lists = {}
-    sub_dirs = [x[0] for x in os.walk(image_dir)]
-    sub_dirs_without_root = sub_dirs[1:]  # first element is root directory
-    for sub_dir in sub_dirs_without_root:
-        file_list = []
-        dir_name = os.path.basename(sub_dir)
-        if dir_name == image_dir:
-            continue
-        print("Looking for images in '{}'".format(dir_name))
-        for extension in VALID_IMAGE_FORMATS:
-            file_glob = os.path.join(image_dir, dir_name, '*.' + extension)
-            file_list.extend(glob.glob(file_glob))
-        if not file_list:
-            warnings.warn('No files found')
-            continue
-        if len(file_list) < 20:
-            warnings.warn('Folder has less than 20 images, which may cause '
-                          'issues.')
-        elif len(file_list) > MAX_NUM_IMAGES_PER_CLASS:
-            warnings.warn('WARNING: Folder {} has more than {} images. Some '
-                          'images will never be selected.'
-                          .format(dir_name, MAX_NUM_IMAGES_PER_CLASS))
-        label_name = re.sub(r'[^a-z0-9]+', ' ', dir_name.lower())
-        training_images = []
-        validation_images = []
-        for file_name in file_list:
-            base_name = os.path.basename(file_name)
-            # Get the hash of the file name and perform variant assignment.
-            hash_name = hashlib.sha1(as_bytes(base_name)).hexdigest()
-            hash_pct = ((int(hash_name, 16) % (MAX_NUM_IMAGES_PER_CLASS + 1)) *
-                        (100.0 / MAX_NUM_IMAGES_PER_CLASS))
-            if hash_pct < validation_pct:
-                validation_images.append(base_name)
-            else:
-                training_images.append(base_name)
-        image_lists[label_name] = {
-            'dir': dir_name,
-            'training': training_images,
-            'validation': validation_images,
-        }
-    return image_lists
 
 def as_bytes(bytes_or_text, encoding='utf-8'):
     """Converts bytes or unicode to `bytes`, using utf-8 encoding for text.
@@ -218,31 +68,6 @@ def as_bytes(bytes_or_text, encoding='utf-8'):
     else:
         raise TypeError('Expected binary or unicode string, got %r' %
                         (bytes_or_text,))
-
-def get_generators(image_lists, config):
-    train_datagen = CustomImageDataGenerator(rescale=1. / 255,
-                                             horizontal_flip=True)
-
-    test_datagen = CustomImageDataGenerator(rescale=1. / 255)
-
-    train_generator = train_datagen.flow_from_image_lists(
-        image_lists=image_lists,
-        category='training',
-        image_dir=config.data.path_to_data,
-        target_size=(config.data.img_height, config.data.img_weight),
-        batch_size=config.data.batch_size,
-        class_mode='categorical')
-
-    validation_generator = test_datagen.flow_from_image_lists(
-        image_lists=image_lists,
-        category='validation',
-        image_dir=config.data.path_to_data,
-        target_size=(config.data.img_height, config.data.img_weight),
-        batch_size=config.data.batch_size,
-        class_mode='categorical')
-
-    return train_generator, validation_generator
-
 
 
 class CustomImageDataGenerator(ImageDataGenerator):
@@ -416,6 +241,67 @@ class ImageListIterator(Iterator):
 
 
 # https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/image_retraining/retrain.py
+def create_image_lists(image_dir, validation_pct=10):
+    """Builds a list of training images from the file system.
+
+    Analyzes the sub folders in the image directory, splits them into stable
+    training, testing, and validation sets, and returns a data structure
+    describing the lists of images for each label and their paths.
+
+    # Arguments
+        image_dir: string path to a folder containing subfolders of images.
+        validation_pct: integer percentage of images reserved for validation.
+
+    # Returns
+        dictionary of label subfolder, with images split into training
+        and validation sets within each label.
+    """
+    if not os.path.isdir(image_dir):
+        raise ValueError("Image directory {} not found.".format(image_dir))
+    image_lists = {}
+    sub_dirs = [x[0] for x in os.walk(image_dir)]
+    sub_dirs_without_root = sub_dirs[1:]  # first element is root directory
+    for sub_dir in sub_dirs_without_root:
+        file_list = []
+        dir_name = os.path.basename(sub_dir)
+        if dir_name == image_dir:
+            continue
+        print("Looking for images in '{}'".format(dir_name))
+        for extension in VALID_IMAGE_FORMATS:
+            file_glob = os.path.join(image_dir, dir_name, '*.' + extension)
+            file_list.extend(glob.glob(file_glob))
+        if not file_list:
+            warnings.warn('No files found')
+            continue
+        if len(file_list) < 20:
+            warnings.warn('Folder has less than 20 images, which may cause '
+                          'issues.')
+        elif len(file_list) > MAX_NUM_IMAGES_PER_CLASS:
+            warnings.warn('WARNING: Folder {} has more than {} images. Some '
+                          'images will never be selected.'
+                          .format(dir_name, MAX_NUM_IMAGES_PER_CLASS))
+        label_name = re.sub(r'[^a-z0-9]+', ' ', dir_name.lower())
+        training_images = []
+        validation_images = []
+        for file_name in file_list:
+            base_name = os.path.basename(file_name)
+            # Get the hash of the file name and perform variant assignment.
+            hash_name = hashlib.sha1(as_bytes(base_name)).hexdigest()
+            hash_pct = ((int(hash_name, 16) % (MAX_NUM_IMAGES_PER_CLASS + 1)) *
+                        (100.0 / MAX_NUM_IMAGES_PER_CLASS))
+            if hash_pct < validation_pct:
+                validation_images.append(base_name)
+            else:
+                training_images.append(base_name)
+        image_lists[label_name] = {
+            'dir': dir_name,
+            'training': training_images,
+            'validation': validation_images,
+        }
+    return image_lists
+
+
+# https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/image_retraining/retrain.py
 def get_image_path(image_lists, label_name, index, image_dir, category):
     """"Returns a path to an image for a label at the given index.
 
@@ -446,3 +332,129 @@ def get_image_path(image_lists, label_name, index, image_dir, category):
     sub_dir = label_lists['dir']
     full_path = os.path.join(image_dir, sub_dir, base_name)
     return full_path
+
+
+def get_generators(image_lists, image_dir):
+    train_datagen = CustomImageDataGenerator(rescale=1. / 255,
+                                             horizontal_flip=True)
+
+    test_datagen = CustomImageDataGenerator(rescale=1. / 255)
+
+    train_generator = train_datagen.flow_from_image_lists(
+        image_lists=image_lists,
+        category='training',
+        image_dir=image_dir,
+        target_size=(MODEL_INPUT_HEIGHT, MODEL_INPUT_WIDTH),
+        batch_size=BATCH_SIZE,
+        class_mode='categorical',
+        seed=RANDOM_SEED)
+
+    validation_generator = test_datagen.flow_from_image_lists(
+        image_lists=image_lists,
+        category='validation',
+        image_dir=image_dir,
+        target_size=(MODEL_INPUT_HEIGHT, MODEL_INPUT_WIDTH),
+        batch_size=BATCH_SIZE,
+        class_mode='categorical',
+        seed=RANDOM_SEED)
+
+    return train_generator, validation_generator
+
+
+def get_model(num_classes, weights='imagenet'):
+    # create the base pre-trained model
+    # , input_tensor=input_tensor
+    base_model = InceptionV3(weights=weights, include_top=False)
+
+    # add a global spatial average pooling layer
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    # let's add a fully-connected layer
+    x = Dense(FC_LAYER_SIZE, activation='relu')(x)
+    # and a logistic layer -- let's say we have 2 classes
+    predictions = Dense(num_classes, activation='softmax')(x)
+
+    # this is the model we will train
+    model = Model(inputs=[base_model.input], outputs=[predictions])
+    return model
+
+
+def get_top_layer_model(model):
+    """Used to train just the top layers of the model."""
+    # first: train only the top layers (which were randomly initialized)
+    # i.e. freeze all convolutional InceptionV3 layers
+    for layer in model.layers[:INCEPTIONV3_BASE_LAYERS]:
+        layer.trainable = False
+    for layer in model.layers[INCEPTIONV3_BASE_LAYERS:]:
+        layer.trainable = True
+
+    # compile the model (should be done after setting layers to non-trainable)
+    model.compile(optimizer='rmsprop', loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+
+    return model
+
+
+def get_mid_layer_model(model):
+    """After we fine-tune the dense layers, train deeper."""
+    # freeze the first TRAINABLE_LAYER_INDEX layers and unfreeze the rest
+    for layer in model.layers[:TRAINABLE_LAYERS]:
+        layer.trainable = False
+    for layer in model.layers[TRAINABLE_LAYERS:]:
+        layer.trainable = True
+
+    # we need to recompile the model for these modifications to take effect
+    # we use SGD with a low learning rate
+    model.compile(optimizer=SGD(lr=0.0001, momentum=0.9),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+
+    return model
+
+
+def train_model(model, epochs, generators, callbacks=None):
+    train_generator, validation_generator = generators
+    model.fit_generator(
+        train_generator,
+        steps_per_epoch=STEPS_PER_EPOCH,
+        validation_data=validation_generator,
+        validation_steps=VALIDATION_STEPS,
+        epochs=epochs,
+        callbacks=callbacks)
+    return model
+
+
+def main(image_dir, validation_pct):
+    # sub_dirs = [x[0] for x in gfile.Walk(image_dir)]
+    num_classes = 100 # len(sub_dirs) - 1
+    print("Number of classes found: {}".format(num_classes))
+
+    model = get_model(num_classes)
+
+    print("Using validation percent of %{}".format(validation_pct))
+    image_lists = create_image_lists(image_dir, validation_pct)
+
+    generators = get_generators(image_lists, image_dir)
+
+    # Get and train the top layers.
+    model = get_top_layer_model(model)
+    model = train_model(model, epochs=10, generators=generators)
+
+    # Get and train the mid layers.
+    model = get_mid_layer_model(model)
+    _ = train_model(model, epochs=100, generators=generators,
+                    callbacks=[checkpointer, early_stopper, tensorboard])
+
+    # save model
+    model.save('./output/model.hdf5', overwrite=True)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--image-dir', required=True, help='data directory')
+    parser.add_argument('--validation-pct', default=10, help='validation percentage')
+    args = parser.parse_args()
+
+    os.makedirs('./output/checkpoints/', exist_ok=True)
+
+    main(**vars(args))

@@ -2,7 +2,10 @@ from tools import Config
 
 data_config = Config(
     path_to_data='/media/nazar/DATA/datasets/TIMIT',
-    batch_size = 2
+    valid_size = 0.1,
+    batch_size = 2,
+    img_height = 224,
+    img_width = 224
 )
 
 train_config = Config(
