@@ -1,5 +1,10 @@
+import os
+import fnmatch
 from operator import itemgetter
 import math
+
+from keras.preprocessing import image
+from keras.applications.vgg19 import preprocess_input
 
 def scaled_exp_decay(start: float, end: float, n_iter: int,
                current_iter: int) -> float:
@@ -87,3 +92,33 @@ def lr_scheduler(current_epoch, epochs):
         return linear_decay(1e-5, 1e-3, edge, current_epoch)
     else:
         return linear_decay(1e-3, 1e-5, epochs, current_epoch)
+
+def find_files(path: str, filename_pattern: str, sort: bool = True) -> list:
+    """Finds all files of type `filename_pattern`
+    in directory and subdirectories paths.
+
+    Args:
+        path: str, directory to search files.
+        filename_pattern: regular expression to specify file type.
+        sort: bool, whether to sort files list. Defaults to True.
+
+    Returns: list of found files.
+    """
+    files = list()
+    for root, _, filenames in os.walk(path):
+        for filename in fnmatch.filter(filenames, filename_pattern):
+            files.append(os.path.join(root, filename))
+    if sort:
+        files.sort()
+    return files
+
+def read_dirs_names(path):
+    """ Return list with dirs names for provided path. """
+    return [name for name in os.listdir(path) if os.path.isdir(name)]
+############################# DATA PROCESSING ##################################
+def preprocess_img(img):
+    """ Load and preprocess one image. """
+    img = image.img_to_array(image.load_img(img, target_size=(224, 224)))
+    img = preprocess_input(img)
+    return img
+################################################################################

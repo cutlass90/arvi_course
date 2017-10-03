@@ -9,3 +9,4 @@
     get image class.
 4. Write model that using image embeddings perform dimentionality reducing,
     and visualize dataset on 2D or 3D.
+5. Look to dataset. Image shapes, class distribution ...

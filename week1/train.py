@@ -21,10 +21,6 @@ model.compile(optimizer='adam',
               loss='categorical_crossentropy',
               metrics=['categorical_accuracy'])
 
-
-
-
-
 call_backs =[
     EarlyStopping('categorical_crossentropy', min_delta=1e-5, patience=2),
     ProgbarLogger('steps'),
