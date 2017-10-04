@@ -7,6 +7,7 @@ from keras.models import Model
 from keras.callbacks import EarlyStopping, ProgbarLogger, ModelCheckpoint
 from keras.callbacks import LearningRateScheduler, CSVLogger, TensorBoard
 from keras.layers import Dense, GlobalAveragePooling2D, Input, Flatten
+from keras.optimizers import SGD
 import numpy as np
 
 import tools
@@ -21,7 +22,7 @@ def get_model(num_classes):
     model = ResNet50(include_top=False, weights='imagenet', input_shape=(224, 224, 3))
     x = model.output
     x = GlobalAveragePooling2D()(x)
-    x = Flatten()(x)
+    # x = Flatten()(x)
     x = Dense(num_classes*2, activation='relu')(x)
     predictions = Dense(num_classes, activation='softmax')(x)
     model = Model(inputs=model.input, outputs=predictions)
