@@ -220,6 +220,13 @@ def as_bytes(bytes_or_text, encoding='utf-8'):
                         (bytes_or_text,))
 
 def get_generators(image_lists, config):
+    def except_catcher(gen):
+        while True:
+            try:
+                data = next(gen)
+                yield data
+            except Exception as e:
+                print('Ups! Something wrong!', e)
 
     train_datagen = CustomImageDataGenerator(rotation_range=45,
                                              width_shift_range=0.1,
@@ -247,7 +254,7 @@ def get_generators(image_lists, config):
         batch_size=config.data.batch_size,
         class_mode='categorical')
 
-    return train_generator, validation_generator
+    return except_catcher(train_generator), except_catcher(validation_generator)
 
 
 

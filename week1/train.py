@@ -25,6 +25,7 @@ def main():
     train_gen, valid_gen = tools.get_generators(image_lists, config)
     # train_gen, valid_gen = tools.mock_generator(config), tools.mock_generator(config)
 
+
     model = ResNet50(include_top=False)
     x = model.output
     x = GlobalAveragePooling2D()(x)
