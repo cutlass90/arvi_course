@@ -227,16 +227,20 @@ def get_generators(image_lists, config):
                 yield data
             except Exception as e:
                 print('Ups! Something wrong!', e)
+    
+    def normilize(img):
+        return (img/255 - 0.5)*2
 
     train_datagen = CustomImageDataGenerator(rotation_range=45,
-                                             width_shift_range=0.1,
-                                             height_shift_range=0.1,
+                                             width_shift_range=0.2,
+                                             height_shift_range=0.2,
                                              zoom_range=0.2,
                                              channel_shift_range=0.1,
                                              horizontal_flip=True,
-                                             vertical_flip=True)
+                                             vertical_flip=True,
+                                             preprocessing_function=normilize)
 
-    test_datagen = CustomImageDataGenerator()
+    test_datagen = CustomImageDataGenerator(preprocessing_function=normilize)
 
     train_generator = train_datagen.flow_from_image_lists(
         image_lists=image_lists,
