@@ -99,12 +99,14 @@ class Config:
             raise TypeError('Wrong dtype.')
 
 
-def lr_scheduler(current_epoch, epochs):
-    edge = epochs // 3
+def lr_scheduler(current_epoch, config):
+    lr_min = config.train.lr_min
+    lr_max = config.train.lr_max
+    edge = config.train.epochs // 3
     if current_epoch < current_epoch:
-        return linear_decay(1e-5, 1e-3, edge, current_epoch)
+        return linear_decay(lr_min, lr_max, edge, current_epoch)
     else:
-        return linear_decay(1e-3, 1e-5, epochs, current_epoch)
+        return linear_decay(lr_max, lr_min, config.train.epochs, current_epoch)
 
 def find_files(path: str, filename_pattern: str, sort: bool = True) -> list:
     """Finds all files of type `filename_pattern`
