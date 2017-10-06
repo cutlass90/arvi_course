@@ -7,6 +7,9 @@ import hashlib
 import warnings
 import glob
 import six
+from shutil import copy
+import random
+
 
 import numpy as np
 from keras import backend as K
@@ -200,6 +203,7 @@ def create_image_lists(image_dir, validation_pct=10):
         }
     return image_lists
 
+
 def as_bytes(bytes_or_text, encoding='utf-8'):
     """Converts bytes or unicode to `bytes`, using utf-8 encoding for text.
 
@@ -262,7 +266,70 @@ def get_generators(image_lists, config):
 
     return except_catcher(train_generator), except_catcher(validation_generator)
 
+def copy_images(config):
+    paths_to_classes = [os.path.join(config.data.path_to_data, name) for name in os.listdir(config.data.path_to_data)]
+    paths_to_classes = [name for name in paths_to_classes if os.path.isdir(name)]
+    for path in paths_to_classes:
+        print(path)
+        dir_name = path.split('/')[-1]
+        copy_to_train = os.path.join('./autoria/train', dir_name)
+        copy_to_test = os.path.join('./autoria/test', dir_name)
+        print(copy_to_train)
+        print(copy_to_test)
+        os.makedirs(copy_to_train, exist_ok=True)
+        os.makedirs(copy_to_test, exist_ok=True)
+        paths_to_img = find_files(path, '*.jpg')
+        random.shuffle(paths_to_img)
+        edge = int(len(paths_to_img)*config.data.valid_size)
+        train_paths = paths_to_img[edge:]
+        val_paths = paths_to_img[:edge]
 
+        for img in train_paths:
+            copy(img, copy_to_train)
+        
+        for img in val_paths:
+            copy(img, copy_to_test)
+        
+        print(path, 'done')
+    print('all done')
+
+
+
+def get_generators_standart(config):
+    def except_catcher(gen):
+        while True:
+            try:
+                data = next(gen)
+                yield data
+            except Exception as e:
+                print('Ups! Something wrong!', e)
+    
+    def normilize(img):
+        return (img/255 - 0.5)*2
+
+    train_datagen = ImageDataGenerator(rotation_range=45,
+                                        width_shift_range=0.2,
+                                        height_shift_range=0.2,
+                                        zoom_range=0.2,
+                                        horizontal_flip=True,
+                                        vertical_flip=True,
+                                        preprocessing_function=normilize)
+
+    test_datagen = ImageDataGenerator(preprocessing_function=normilize)
+
+    train_generator = train_datagen.flow_from_directory(
+        directory=config.data.path_to_train,
+        target_size=(config.data.img_height, config.data.img_width),
+        batch_size=config.data.batch_size,
+        class_mode='categorical')
+
+    validation_generator = test_datagen.flow_from_directory(
+        directory=config.data.path_to_test,
+        target_size=(config.data.img_height, config.data.img_width),
+        batch_size=config.data.batch_size,
+        class_mode='categorical')
+
+    return except_catcher(train_generator), except_catcher(validation_generator)
 
 class CustomImageDataGenerator(ImageDataGenerator):
     def flow_from_image_lists(self, image_lists,
