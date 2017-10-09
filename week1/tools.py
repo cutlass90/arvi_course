@@ -266,6 +266,13 @@ def get_generators(image_lists, config):
 
     return except_catcher(train_generator), except_catcher(validation_generator)
 
+def get_classes_map(path_to_data):
+    paths_to_classes = [os.path.join(path_to_data, name) for name in os.listdir(path_to_data)]
+    paths_to_classes = [name for name in paths_to_classes if os.path.isdir(name)]
+    classes = [path.split('/')[-1] for path in paths_to_classes]
+    classes.sort()
+    return {i: class_ for i, class_ in enumerate(classes)}
+
 def copy_images(config):
     paths_to_classes = [os.path.join(config.data.path_to_data, name) for name in os.listdir(config.data.path_to_data)]
     paths_to_classes = [name for name in paths_to_classes if os.path.isdir(name)]
