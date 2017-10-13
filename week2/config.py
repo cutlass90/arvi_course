@@ -6,9 +6,9 @@ config = Config(
     path_to_test_imgs='/mnt/course/datasets/coco/val2017',
     path_to_test_json='/mnt/course/datasets/coco/annotations/instances_val2017.json',
     test_size = 0.1,
-    batch_size = 5,
-    img_height = 480, #after resize
-    img_width = 640, # after resize
+    batch_size = 16,
+    img_height = 240, #after resize
+    img_width = 320, # after resize
     n_classes = 80, # 80 classes
 
     #train config

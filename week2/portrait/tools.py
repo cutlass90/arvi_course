@@ -191,4 +191,4 @@ def get_generators(config):
         batch_size=config.data.batch_size,
         save_to_dir='./save_to_dir_test')
 
-    return except_catcher(train_generator), except_catcher(validation_generator)
+    return train_generator, validation_generator

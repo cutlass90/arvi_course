@@ -3,11 +3,14 @@ import fnmatch
 import math
 import random
 from operator import itemgetter
+from collections import defaultdict
+from functools import partial
 
 import numpy as np
 from pycocotools.coco import COCO
 from keras.preprocessing import image
 from scipy.misc import imresize
+from keras import backend as K
 
 
 
@@ -194,5 +197,38 @@ def get_generators(c):
     test_gen = generator(test_coco, c, c.path_to_test_imgs)
     return except_catcher(train_gen), except_catcher(test_gen)
 
-    
+def get_class_distrib(c):
+    cocodata = COCO(c.path_to_train_json)
+    cat_to_class_map = {cat: i for i, cat in enumerate(cocodata.getCatIds())}
+    img_ids = list(cocodata.imgs.keys()) #cocodata.getImgIds()
+    cat_distr = defaultdict(int)
+    for img_id in img_ids:
+        anns = cocodata.imgToAnns[img_id]
+        cats = np.array([ann['category_id'] for ann in anns])
+        for cat in  set(list(cats)):
+            cat_distr[cat] += np.sum(cats == cat)
+    cat_distr = {cat_to_class_map[cat]:n for cat, n in cat_distr.items()}
+    cat_distr = {k:max(cat_distr.values())/v for k, v in cat_distr.items()}
+    class_distr = np.array([cat_distr[cat] for cat in sorted(cat_distr.keys())])
+    print('class distrib\n', class_distr)
+    return class_distr
 
+def weighted_loss(y_true, y_pred, weights):
+    """ Return weighted sum of crossentropy loss. 
+
+    Args:
+        y_true: np.array, shape = [batch, height, width. n_classes]
+        y_pred: np.array, shape = [batch, height, width. n_classes]
+        weights: np.array with class weights, shape = [n_classes]
+
+    Reurn:
+        cost: float
+    """ 
+    n_classes = len(weights)
+    y_true = K.reshape(y_true, shape=[-1, n_classes])
+    y_pred = K.reshape(y_pred, shape=[-1, n_classes])
+    cost = K.mean(K.binary_crossentropy(y_true, y_pred)*weights)
+    return cost
+
+def get_weighted_loss_keras(weights):
+    return partial(weighted_loss, weights=weights)

@@ -16,17 +16,26 @@ from config import config as c
 import tools
 from vggUnet import VGGUnet
 
+def get_model():
+    if os.path.isfile(c.path_to_models+'/model'):
+        model = load_model(c.path_to_models+'/model',
+                        custom_objects={'weighted_loss_func': weighted_loss_func})
+        print('model is loaded')
+    else:
+        model = VGGUnet(c)
+    return model
+
 train_gen, val_gen = tools.get_generators(c)
-if os.path.isfile(c.path_to_models+'/model'):
-    model = load_model(c.path_to_models+'/model')
-    print('model is loaded')
-else:
-    model = VGGUnet(c)
+
+class_weight = tools.get_class_distrib(c)
+weighted_loss_func = tools.get_weighted_loss_keras(class_weight)
+weighted_loss_func.__name__ ='weighted_loss_func'
+
+model = get_model()
 
 model.compile(
     optimizer=Adam(),
-    loss='binary_crossentropy',
-    metrics=['accuracy'])
+    loss=weighted_loss_func)
 
 os.makedirs(c.path_to_summaries, exist_ok=True)
 os.makedirs(c.path_to_models, exist_ok=True)
@@ -40,6 +49,7 @@ call_backs =[
     TensorBoard(c.path_to_summaries)
     ]
 
+
 model.fit_generator(generator=train_gen,
                     steps_per_epoch=500,
                     epochs=c.epochs,
@@ -49,4 +59,4 @@ model.fit_generator(generator=train_gen,
                     validation_steps=100,
                     max_queue_size=c.max_queue_size,
                     workers=c.workers,
-                    use_multiprocessing=False)
+                    class_weight=class_weight)
