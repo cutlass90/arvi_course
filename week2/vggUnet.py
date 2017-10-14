@@ -86,11 +86,15 @@ def VGGUnet(c):
     # d = BatchNormalization()(d)
     # d = Activation('relu')(d)
 
-    d = Conv2D(c.n_classes, (1, 1))(d)
-    d = Lambda(Interp, arguments={'shape': (c.img_height, c.img_width)})(d)
-    d = Activation('sigmoid')(d)
+    normal_output = Conv2D(c.n_classes, (1, 1))(d)
+    normal_output = Lambda(Interp, arguments={'shape': (c.img_height, c.img_width)})(normal_output)
+    normal_output = Activation('sigmoid', name='normal_output')(normal_output)
 
-    finalmodel = Model(inputs=img_input, outputs=d)
+    multiobject_output = Conv2D(c.n_classes, (1, 1))(d)
+    multiobject_output = Lambda(Interp, arguments={'shape': (c.img_height, c.img_width)})(multiobject_output)
+    multiobject_output = Activation('sigmoid', name='multiobject_output')(multiobject_output)
+
+    finalmodel = Model(inputs=img_input, outputs=[normal_output, multiobject_output])
     finalmodel.summary()
 
     return finalmodel

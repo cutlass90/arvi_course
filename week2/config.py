@@ -6,16 +6,17 @@ config = Config(
     path_to_test_imgs='/mnt/course/datasets/coco/val2017',
     path_to_test_json='/mnt/course/datasets/coco/annotations/instances_val2017.json',
     test_size = 0.1,
-    batch_size = 16,
+    batch_size = 2,
     img_height = 240, #after resize
     img_width = 320, # after resize
     n_classes = 80, # 80 classes
+    n_obj = 10,
 
     #train config
     path_to_summaries = './summaries',
     path_to_log = './log.csv',
     path_to_models = './models',
-    epochs = 1000,
+    epochs = 100,
     max_queue_size = 100,
     workers = 1
     )

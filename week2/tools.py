@@ -11,6 +11,7 @@ from pycocotools.coco import COCO
 from keras.preprocessing import image
 from scipy.misc import imresize
 from keras import backend as K
+import tensorflow as tf
 
 
 
@@ -162,7 +163,10 @@ def generator(coco, c, path_to_imgs):
         random.shuffle(img_ids)
         X = get_imgs_by_ids(img_ids[:c.batch_size], coco, c, path_to_imgs)
         Y = get_targets_by_ids(img_ids[:c.batch_size], coco, c, cat_to_class_map)
-        yield (X, Y)
+        Y = Y.astype(np.uint8)
+        Y_normal = (Y > 0.5).astype(np.uint8)
+        X = X.astype(np.float32)
+        yield (X, {'normal_output': Y_normal, 'multiobject_output': Y})
     
 
 def get_imgs_by_ids(img_ids, coco, c, path_to_imgs):
@@ -175,18 +179,22 @@ def get_imgs_by_ids(img_ids, coco, c, path_to_imgs):
             target_size=[c.img_height, c.img_width]))/127.5 - 1
     return X
 
-def get_targets_by_ids(img_ids, coco, c, cat_to_class_map):
+def get_targets_by_ids(img_ids, coco, c, cat_to_class_map, multiobject_segmentation=True):
     """ Return targets as array batch_size x height x width x n_channels. """
     Y = np.zeros((c.batch_size, c.img_height, c.img_width, c.n_classes),
                     dtype=np.float)
     for b, id_ in enumerate(img_ids):
         anns = coco.imgToAnns[id_]
+        what_class_was_used = defaultdict(int)
         for ann in anns:
             i = cat_to_class_map[ann['category_id']]
+            what_class_was_used[i] += 1
             mask = imresize(coco.annToMask(ann), [c.img_height, c.img_width])
             mask = (mask > 0).astype(float)
+            if multiobject_segmentation:
+                mask *= what_class_was_used[i]
             Y[b, :, :, i] += mask
-    Y = (Y > 0).astype(np.uint8)
+    # Y = (Y > 0).astype(np.uint8)
     return Y
 
 def get_generators(c):
@@ -195,7 +203,7 @@ def get_generators(c):
     
     train_gen = generator(train_coco, c, c.path_to_train_imgs)
     test_gen = generator(test_coco, c, c.path_to_test_imgs)
-    return except_catcher(train_gen), except_catcher(test_gen)
+    return train_gen, test_gen
 
 def get_class_distrib(c):
     cocodata = COCO(c.path_to_train_json)
@@ -232,3 +240,48 @@ def weighted_loss(y_true, y_pred, weights):
 
 def get_weighted_loss_keras(weights):
     return partial(weighted_loss, weights=weights)
+
+def multiobject_segmentation_loss(y_true, y_pred, n_classes, n_obj):
+    """ Compute my specific loss for object segmentation and detection. 
+    
+    Args:
+        n_classes: int, number of classes in dataset
+        n_obj: int, maximum number of object on one layer(class)
+    """
+    def pairwase_MSE(x):
+        x1 = tf.expand_dims(x, 0)
+        x2 = tf.expand_dims(x, 1)
+        z = x1 - x2
+        return tf.reduce_sum(tf.square(x))
+
+    def masked_mean(x, mask):
+        n = tf.reduce_sum(mask)
+        sum_ = tf.reduce_sum(x * mask)
+        return sum_/(n + 1e-8)
+
+    def masked_dispersion(x, mask):
+        mean = masked_mean(x, mask)
+        n = tf.reduce_sum(mask)
+        return tf.reduce_sum(tf.square(x - mean))/(n+1e-8)
+
+    loss = 0
+    for layer in range(n_classes):
+        y_t = y_true[:, :, :, layer]
+        y_p = y_pred[:, :, :, layer]
+        mean_list = []
+        d_list = []
+        for obj in range(n_obj):
+            mask = tf.cast(tf.equal(y_t, obj), tf.float32) # b x h x w
+            mean_list.append(masked_mean(y_p, mask))
+            d_list.append(masked_dispersion(y_p, mask))
+        mean = tf.convert_to_tensor(mean_list)
+        d = tf.convert_to_tensor(d_list)
+        real_n_objs = tf.cast(tf.reduce_max(y_t), tf.int32)
+        mean = mean[:real_n_objs]
+        d = d[:real_n_objs]
+        loss += pairwase_MSE(mean)
+        loss += tf.reduce_sum(d)
+    return loss
+
+def multiobject_segmentation_loss_keras(n_classes, n_obj):
+    return partial(multiobject_segmentation_loss, n_classes=n_classes, n_obj=n_obj)
