@@ -1,6 +1,7 @@
 from keras.models import Sequential
 from keras.layers import Dense, Activation, TimeDistributed
 from keras.layers import LSTM
+from keras.optimizers import SGD
 from keras.callbacks import EarlyStopping, ProgbarLogger, ModelCheckpoint
 from keras.callbacks import LearningRateScheduler, CSVLogger, TensorBoard
 from keras.optimizers import RMSprop
@@ -38,7 +39,7 @@ def get_model():
         model.add(LSTM(256, return_sequences=True, input_shape=(c.max_len, 256)))
         model.add(TimeDistributed(Dense(dict_size)))
         model.add(Activation('softmax'))
-    model.compile(optimizer='adam',
+    model.compile(optimizer=SGD(lr=1e-3, momentum=0.9),
                   loss='categorical_crossentropy')
     return model
 
