@@ -11,7 +11,7 @@ config = Config(
     path_to_summaries = './summaries',
     path_to_log = './log.csv',
     path_to_models = './models',
-    epochs = 20,
+    epochs = 200,
     max_queue_size = 100,
     workers = 1
     )
