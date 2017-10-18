@@ -7,6 +7,7 @@ from collections import defaultdict
 from functools import partial
 
 import numpy as np
+from scipy.ndimage import imread
 from pycocotools.coco import COCO
 from keras.preprocessing import image
 from keras_vggface.utils import preprocess_input
@@ -14,9 +15,10 @@ from scipy.misc import imresize
 from keras import backend as K
 import tensorflow as tf
 from scipy.ndimage import imread
-from scipy.misc import imsave
+from scipy.misc import imsave, imresize
 from scipy.signal import resample
 from scipy import ndimage as nd
+import pandas as pd
 
 
 
@@ -105,6 +107,8 @@ def get_file_name(filepath: str) -> str:
 
     return filename
 
+def rgb2gray(rgb):
+    return np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
 
 def except_catcher(gen):
     while True:
@@ -138,42 +142,45 @@ def resample_imgs(imgs, target_frames):
 def generator(c, paths):
     while True:
         random.shuffle(paths)
-        img_inputs = np.empty(c.batch_size, c.n_frames, c.img_height, c.img_width)
+        img_inputs = np.empty([c.batch_size, c.n_frames, c.img_height, c.img_width])
         landmark_inputs = np.ones([c.batch_size, c.n_frames, c.landmark_size])
         out_emotion = np.zeros([c.batch_size, c.n_emotions])
         out_au = np.zeros([c.batch_size, c.n_action_units])
         for b, path in enumerate(paths[:c.batch_size]):
             # img_inputs
-            for img in find_files(os.path.join(c.path_to_data, 'images', path),
-                                  '*.png'):
-                imgs = []
-                img = image.img_to_array(image.load_img(img,
-                    target_size=(c.img_height, c.img_width)))
-                img = preprocess_input(img)
+            imgs = []
+            for img in find_files(os.path.join(c.path_to_data, 'images/', path), '*.png'):
+                img = imread(img).astype(float)
+                if len(img.shape) > 2:
+                    img = rgb2gray(img)
+                if img.shape != (c.img_height, c.img_width):
+                    img = imresize(img, (c.img_height, c.img_width))
+                # img = preprocess_input(img)
+                img = img - 110
                 imgs.append(img)
             imgs = np.stack(imgs)
             imgs = resample_imgs(imgs, c.n_frames)
             img_inputs[b] = imgs
 
             # landmark_inputs
-            for l in find_files(os.path.join(c.path_to_data, 'landmarks', path),
-                                '*.txt'):
+            for l in find_files(os.path.join(c.path_to_data, 'landmarks/', path), '*.txt'):
                 pass
             landmark_inputs[b] = np.ones([c.n_frames, c.landmark_size])
 
             # out_emotion
-            emo_path = find_files(os.path.join(c.path_to_data, 'emotions', path),
-                                  '*.txt')
+            emo_path = find_files(os.path.join(c.path_to_data, 'emotions/', path), '*.txt')
             if len(emo_path) == 0:
                 class_ = random.randint(1, c.n_emotions)
             else:
                 with open(emo_path[0], 'r') as f:
-                    class_ = int(f.read())
-            
+                    class_ = int(float(f.read()[3:-1]))
+            out_emotion[b, class_-1] = 1
 
-            
-
-
+            #out_au
+            label = find_files(os.path.join(c.path_to_data, 'labels/', path), '*.txt')[0]
+            au = pd.read_csv(label, delimiter='   ', names=['emotion', 'value'])
+            for e in au.emotion:
+                out_au[b, c.au_map[e]] = 1
         
         yield ({'img_inputs': img_inputs, 'landmark_inputs': landmark_inputs},
             {'out_emotion': out_emotion, 'out_au': out_au})
@@ -181,7 +188,7 @@ def generator(c, paths):
 
 
 def get_generators(c):
-    path = os.path.join(c.path_to_data, 'images')
+    path = os.path.join(c.path_to_data, 'images/')
     paths = [os.path.join(g, l) for g in os.listdir(path) for l in os.listdir(path+g)
         if os.path.isdir(os.path.join(path, g, l))]
     edge = int(len(paths)*c.test_size)
@@ -189,3 +196,13 @@ def get_generators(c):
     test_paths = paths[-edge:]
     train_gen = generator(c, train_paths)
     test_gen = generator(c, test_paths)
+    return train_gen, test_gen
+
+################################################################################
+
+    
+
+if __name__ == '__main__':
+    from config import config as c
+    train_gen, test_gen = get_generators(c)
+    a = next(train_gen)
