@@ -26,8 +26,8 @@ model.compile(
     loss={'out_au': 'binary_crossentropy',
           'out_emotion': 'categorical_crossentropy'})
 
-train_gen = tools.fake_generator(c)
-test_gen = tools.fake_generator(c)
+train_gen, test_gen = tools.get_generators(c)
+# train_gen, test_gen = tools.fake_generator(c), tools.fake_generator(c)
 model.fit_generator(generator=train_gen,
                     steps_per_epoch=200,
                     epochs=c.epochs,

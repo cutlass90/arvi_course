@@ -4,6 +4,7 @@ env_dslib
 .vscode
 .mypy_cache
 facs
+facs.zip
 S.png
 dlib-19.7
 shape_predictor_68_face_landmarks.dat

@@ -8,7 +8,6 @@ from functools import partial
 
 import numpy as np
 from scipy.ndimage import imread
-from pycocotools.coco import COCO
 from keras.preprocessing import image
 from keras_vggface.utils import preprocess_input
 from scipy.misc import imresize
@@ -128,7 +127,7 @@ def except_catcher(gen):
 
 def fake_generator(c):
     while True:
-        img_inputs = np.ones([c.batch_size, c.n_frames, c.img_height, c.img_width, 3])
+        img_inputs = np.ones([c.batch_size, c.n_frames, c.img_height, c.img_width, 1])
         landmark_inputs = np.ones([c.batch_size, c.n_frames, c.landmark_size])
         out_emotion = np.zeros([c.batch_size, c.n_emotions])
         out_emotion[:, 0] = 1
@@ -146,7 +145,7 @@ def generator(c, paths):
     while True:
         random.shuffle(paths)
         img_inputs = np.empty([c.batch_size, c.n_frames, c.img_height, c.img_width])
-        landmark_inputs = np.ones([c.batch_size, c.n_frames, c.landmark_size])
+        landmark_inputs = np.zeros([c.batch_size, c.n_frames, c.landmark_size])
         out_emotion = np.zeros([c.batch_size, c.n_emotions])
         out_au = np.zeros([c.batch_size, c.n_action_units])
         for b, path in enumerate(paths[:c.batch_size]):
@@ -182,6 +181,7 @@ def generator(c, paths):
             for e in au.emotion:
                 out_au[b, c.au_map[e]] = 1
         
+        img_inputs = np.expand_dims(img_inputs, 4)
         yield ({'img_inputs': img_inputs, 'landmark_inputs': landmark_inputs},
             {'out_emotion': out_emotion, 'out_au': out_au})
 

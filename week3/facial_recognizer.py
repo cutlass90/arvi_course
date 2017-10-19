@@ -7,15 +7,15 @@ from keras.models import Sequential
 from config import config as c
 def facial_recognizer(c):
     # inputs
-    img_inputs = Input(shape=(c.n_frames, c.img_height, c.img_width, 3),
+    img_inputs = Input(shape=(c.n_frames, c.img_height, c.img_width, 1),
                     name="img_inputs")
     landmark_inputs = Input(shape=(c.n_frames, c.landmark_size), name="landmark_inputs")
 
     # image feature extractor
     def get_feature_extractor():
         vgg_model = VGGFace(include_top=False,
-                            input_shape=(c.img_height, c.img_width, 3),
-                            pooling='avg')
+                            input_shape=(c.img_height, c.img_width, 1),
+                            pooling='avg', weights=None)
         for layer in vgg_model.layers:
             layer.trainable = False
         last_layer = vgg_model.get_layer('pool5')
@@ -29,7 +29,6 @@ def facial_recognizer(c):
 
     vgg_feature_extractor = get_feature_extractor()
     img_features = TimeDistributed(vgg_feature_extractor)(img_inputs)
-    print(img_features)
 
     # landmark feature extractor
     landmark_encoder = Sequential()
