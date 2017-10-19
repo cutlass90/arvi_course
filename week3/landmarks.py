@@ -24,14 +24,13 @@ def shape_to_np(shape, dtype="int"):
 
 
 
-def gen_landmark(image):
+def gen_landmark(image, path):
     # image - PIL image
     rects = detector(image, 1)
     nRects = len(rects)
     if nRects != 1:
-        print("Found {} faces on image.".format(nRects))
-        return np.zeros([68, 2]), np.zeros([68, 2])
-        # raise ValueError("Found {} faces on image.".format(nRects))
+        cv2.imwrite('failed.jpg', image)
+        raise ValueError("Found {} faces on image in path {}".format(nRects, path))
 
     rect = rects[0]
     landmarks = predictor(image, rect)

@@ -166,7 +166,7 @@ def generator(c, paths):
             # landmark_inputs
             landmarks = []
             for img in imgs:
-                landmarks.append(np.reshape(land.gen_landmark(img)[1], [-1]))
+                landmarks.append(np.reshape(land.gen_landmark(img, path)[1], [-1]))
             landmark_inputs[b] = np.stack(landmarks)
 
             # out_emotion
