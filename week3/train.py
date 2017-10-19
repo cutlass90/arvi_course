@@ -24,7 +24,9 @@ model.compile(
     # optimizer=SGD(lr=1e-3, momentum=0.9),
     optimizer='adam',
     loss={'out_au': 'binary_crossentropy',
-          'out_emotion': 'categorical_crossentropy'})
+          'out_emotion': tools.masked_loss},
+    metrics={'out_au': 'accuracy',
+             'out_emotion': tools.masked_acc})
 
 train_gen, test_gen = tools.get_generators(c)
 # train_gen, test_gen = tools.fake_generator(c), tools.fake_generator(c)

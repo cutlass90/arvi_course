@@ -29,8 +29,9 @@ def gen_landmark(image):
     rects = detector(image, 1)
     nRects = len(rects)
     if nRects != 1:
-        # print("Found {} faces on image.".format(nRects))
-        raise ValueError("Found {} faces on image.".format(nRects))
+        print("Found {} faces on image.".format(nRects))
+        return np.zeros([68, 2]), np.zeros([68, 2])
+        # raise ValueError("Found {} faces on image.".format(nRects))
 
     rect = rects[0]
     landmarks = predictor(image, rect)

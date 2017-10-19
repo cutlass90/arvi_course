@@ -6,6 +6,8 @@ from operator import itemgetter
 from collections import defaultdict
 from functools import partial
 
+import tensorflow as tf
+from keras import backend as K
 import numpy as np
 from scipy.ndimage import imread
 from keras.preprocessing import image
@@ -152,13 +154,14 @@ def generator(c, paths):
             # img_inputs
             imgs = []
             for img in find_files(os.path.join(c.path_to_data, 'images/', path), '*.png'):
-                img = imread(img, flatten=True)
+                img = imread(img, flatten=True, mode='F').astype(np.uint8)
                 if img.shape != (c.img_height, c.img_width):
                     img = imresize(img, (c.img_height, c.img_width))
                 imgs.append(img)
             imgs = np.stack(imgs)
-            imgs = resample_imgs(imgs, c.n_frames).astype(np.uint8)
-            img_inputs[b] = imgs - 110
+            imgs = resample_imgs(imgs, c.n_frames)
+            
+            img_inputs[b] = imgs.astype(float)/127.5 - 1
 
             # landmark_inputs
             landmarks = []
@@ -197,6 +200,21 @@ def get_generators(c):
     train_gen = generator(c, train_paths)
     test_gen = generator(c, test_paths)
     return train_gen, test_gen
+
+
+def masked_loss(y_true, y_pred):
+    # when y_true == 0 mask loss
+    mask = tf.cast(tf.greater(tf.reduce_sum(y_true, axis=1), 0.5), tf.float32)
+    return tf.reduce_mean(mask*K.categorical_crossentropy(y_true, y_pred))
+
+def masked_acc(y_true, y_pred):
+    # when y_true == 0 mask loss
+    acc = K.cast(K.equal(K.argmax(y_true, axis=-1), K.argmax(y_pred, axis=-1)),
+           K.floatx())
+    mask = tf.cast(tf.greater(tf.reduce_sum(y_true, axis=1), 0.5), tf.float32)
+    return tf.reduce_sum(acc)/tf.reduce_sum(mask)
+
+
 
 ################################################################################
 
