@@ -167,16 +167,18 @@ def generator(c, paths):
             landmarks = []
             for img in imgs:
                 landmarks.append(np.reshape(land.gen_landmark(img, path)[1], [-1]))
-            landmark_inputs[b] = np.stack(landmarks)
+            landmarks_delta = []
+            for i in range(len(landmarks) - 1):
+                landmarks_delta.append(landmarks[i] - landmarks[i+1])
+            landmarks_delta.append(landmarks[-1] - landmarks[0])
+            landmark_inputs[b] = np.hstack([np.stack(landmarks), np.stack(landmarks_delta)])
 
             # out_emotion
             emo_path = find_files(os.path.join(c.path_to_data, 'emotions/', path), '*.txt')
-            if len(emo_path) == 0:
-                class_ = random.randint(1, c.n_emotions)
-            else:
+            if len(emo_path) > 0:
                 with open(emo_path[0], 'r') as f:
                     class_ = int(float(f.read()[3:-1]))
-            out_emotion[b, class_-1] = 1
+                out_emotion[b, class_-1] = 1
 
             #out_au
             label = find_files(os.path.join(c.path_to_data, 'labels/', path), '*.txt')[0]

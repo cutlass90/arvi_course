@@ -1,7 +1,7 @@
 from keras_vggface.vggface import VGGFace
 from keras.engine import  Model
 from keras.layers import Flatten, Dense, Input, TimeDistributed, Lambda, LSTM
-from keras.layers import Concatenate
+from keras.layers import Concatenate, Bidirectional
 from keras.models import Sequential
 
 from config import config as c
@@ -37,7 +37,7 @@ def facial_recognizer(c):
     landmark_features = TimeDistributed(landmark_encoder)(landmark_inputs)
 
     all_features = Concatenate(axis=-1)([img_features, landmark_features])
-    lstm_out = LSTM(256)(all_features)
+    lstm_out = Bidirectional(LSTM(256))(all_features)
 
     out_emotion = Dense(c.n_emotions, activation='softmax', name='out_emotion')(lstm_out)
     out_au = Dense(c.n_action_units, activation='sigmoid', name='out_au')(lstm_out)
