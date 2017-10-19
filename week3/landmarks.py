@@ -29,8 +29,9 @@ def gen_landmark(image, path):
     rects = detector(image, 1)
     nRects = len(rects)
     if nRects != 1:
-        cv2.imwrite('failed.jpg', image)
-        raise ValueError("Found {} faces on image in path {}".format(nRects, path))
+        return (np.zeros((68, 2), dtype='int'), np.zeros((68, 2)))
+        #cv2.imwrite('failed.jpg', image)
+        #raise ValueError("Found {} faces on image in path {}".format(nRects, path))
 
     rect = rects[0]
     landmarks = predictor(image, rect)
