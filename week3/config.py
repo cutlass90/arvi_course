@@ -3,15 +3,15 @@ from tools import Config
 config = Config(
     # data config
     path_to_data='./facs',
+    # path_to_data='/mnt/course/datasets/facs/',
     test_size = 0.1,
-    batch_size = 2,############################################
+    batch_size = 1,
     img_height = 490,
     img_width = 640,
     n_emotions = 7,
     n_action_units = 41, # target action units
     landmark_size = 136, # number of features that provide dlib
-    img_shape = (640, 490, 3), # original image shape
-    n_frames = 10, # number of images in sequence
+    n_frames = 20, # number of images in sequence
     # train config
     path_to_summaries = './summaries',
     path_to_log = './log.csv',

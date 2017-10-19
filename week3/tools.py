@@ -15,10 +15,13 @@ from scipy.misc import imresize
 from keras import backend as K
 import tensorflow as tf
 from scipy.ndimage import imread
-from scipy.misc import imsave, imresize
+from scipy.misc import imsave, imresize, toimage
 from scipy.signal import resample
 from scipy import ndimage as nd
 import pandas as pd
+from PIL import Image
+
+import landmarks as land
 
 
 
@@ -150,22 +153,19 @@ def generator(c, paths):
             # img_inputs
             imgs = []
             for img in find_files(os.path.join(c.path_to_data, 'images/', path), '*.png'):
-                img = imread(img).astype(float)
-                if len(img.shape) > 2:
-                    img = rgb2gray(img)
+                img = imread(img, flatten=True)
                 if img.shape != (c.img_height, c.img_width):
                     img = imresize(img, (c.img_height, c.img_width))
-                # img = preprocess_input(img)
-                img = img - 110
                 imgs.append(img)
             imgs = np.stack(imgs)
-            imgs = resample_imgs(imgs, c.n_frames)
-            img_inputs[b] = imgs
+            imgs = resample_imgs(imgs, c.n_frames).astype(np.uint8)
+            img_inputs[b] = imgs - 110
 
             # landmark_inputs
-            for l in find_files(os.path.join(c.path_to_data, 'landmarks/', path), '*.txt'):
-                pass
-            landmark_inputs[b] = np.ones([c.n_frames, c.landmark_size])
+            landmarks = []
+            for img in imgs:
+                landmarks.append(np.reshape(land.gen_landmark(img)[1], [-1]))
+            landmark_inputs[b] = np.stack(landmarks)
 
             # out_emotion
             emo_path = find_files(os.path.join(c.path_to_data, 'emotions/', path), '*.txt')
