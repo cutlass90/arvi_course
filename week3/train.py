@@ -19,24 +19,30 @@ call_backs =[
     TensorBoard(c.path_to_summaries)
     ]
 
-model = facial_recognizer(c)
+if os.path.isfile(os.path.join(c.path_to_models, 'model')):
+    model = load_model(os.path.join(c.path_to_models, 'model'),
+                       custom_objects={'masked_loss': tools.masked_loss})
+    print('Model loaded')
+else:
+    model = facial_recognizer(c)
 model.compile(
     # optimizer=SGD(lr=1e-3, momentum=0.9),
     optimizer='adam',
     loss={'out_au': 'binary_crossentropy',
-          'out_emotion': tools.masked_loss},
+        'out_emotion': tools.masked_loss},
     metrics={'out_au': 'accuracy',
-             'out_emotion': tools.masked_acc})
+            'out_emotion': tools.masked_acc})
+# model.summary()
 
 train_gen, test_gen = tools.get_generators(c)
 # train_gen, test_gen = tools.fake_generator(c), tools.fake_generator(c)
 model.fit_generator(generator=train_gen,
-                    steps_per_epoch=200,
+                    steps_per_epoch=50,
                     epochs=c.epochs,
                     verbose=1,
                     callbacks=call_backs,
                     validation_data=test_gen,
-                    validation_steps=50,
+                    validation_steps=10,
                     max_queue_size=c.max_queue_size,
                     workers=c.workers)
 model.save(c.path_to_models+'/model_OE')

@@ -5,13 +5,13 @@ config = Config(
     path_to_data='./facs',
     # path_to_data='/mnt/course/datasets/facs/',
     test_size = 0.1,
-    batch_size = 4,
+    batch_size = 8,
     img_height = 240,
     img_width = 320,
     n_emotions = 7,
     n_action_units = 41, # target action units
     landmark_size = 2*136, # number of features that provide dlib + delta coding
-    n_frames = 20, # number of images in sequence
+    n_frames = 10, # number of images in sequence
     # train config
     path_to_summaries = './summaries',
     path_to_log = './log.csv',

@@ -19,7 +19,7 @@ def facial_recognizer(c):
         for layer in vgg_model.layers:
             layer.trainable = False
         last_layer = vgg_model.get_layer('pool5')
-        
+        print(last_layer.output_shape)
         vgg_feature_extractor = Sequential()
         vgg_feature_extractor.add(last_layer)
         vgg_feature_extractor.add(Flatten())
