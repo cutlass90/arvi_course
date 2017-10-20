@@ -1,4 +1,5 @@
 import os
+import pickle
 import fnmatch
 import math
 import random
@@ -143,6 +144,59 @@ def resample_imgs(imgs, target_frames):
     # target_frames: int, target number of frames
     return nd.interpolation.zoom(imgs, zoom=[target_frames/len(imgs), 1, 1])
 
+
+def process_single_img(img, c):
+    if c.rectangle_imgs:
+        shape = img.shape
+        min_shape, max_shape = np.min(shape), np.max(shape)
+        l = (max_shape - min_shape)//2
+        r = (max_shape - min_shape) - l
+        if shape[0] > shape[1]:
+            img = img[l:-r, :]
+        else:
+            img = img[:, l:-r]
+    if img.shape != (c.img_height, c.img_width):
+        img = imresize(img, (c.img_height, c.img_width))
+    return img
+
+def data_augmentation(imgs, c):
+    # imgs - list of 2D images
+
+    def sequence_change(imgs, change_faktor):
+        # change_faktor: float from 0 to 0.4
+        l = random.randint(0, int(len(imgs)*change_faktor))
+        r = random.randint(0, int(len(imgs)*change_faktor)) + 1
+        return imgs[l:-r]
+    imgs = sequence_change(imgs, c.sequence_change)
+    imgs = np.stack(imgs)
+    imgs = resample_imgs(imgs, c.n_frames)
+    imgs = image.random_zoom(imgs, c.zoom_range)
+    imgs = image.random_rotation(imgs, c.random_rotation)
+    imgs = image.random_shear(imgs, c.random_shear)
+    return imgs
+
+def process_imgs(paths, c, augmentation=True):
+    imgs = []
+    for img in paths:
+        img = imread(img, flatten=True, mode='F').astype(np.uint8)
+        imgs.append(process_single_img(img, c))
+    if augmentation:
+        imgs = data_augmentation(imgs, c)
+    else:
+        imgs = np.stack(imgs)
+        imgs = resample_imgs(imgs, c.n_frames)
+    return imgs
+
+def process_landmarks(imgs, path):
+    landmarks = []
+    for img in imgs:
+        landmarks.append(np.reshape(land.gen_landmark(img, path)[1], [-1]))
+    landmarks_delta = []
+    for i in range(len(landmarks) - 1):
+        landmarks_delta.append(landmarks[i] - landmarks[i+1])
+    landmarks_delta.append(landmarks[-1] - landmarks[0])
+    return np.hstack([np.stack(landmarks), np.stack(landmarks_delta)])
+
 def generator(c, paths):
     while True:
         random.shuffle(paths)
@@ -152,26 +206,12 @@ def generator(c, paths):
         out_au = np.zeros([c.batch_size, c.n_action_units])
         for b, path in enumerate(paths[:c.batch_size]):
             # img_inputs
-            imgs = []
-            for img in find_files(os.path.join(c.path_to_data, 'images/', path), '*.png'):
-                img = imread(img, flatten=True, mode='F').astype(np.uint8)
-                if img.shape != (c.img_height, c.img_width):
-                    img = imresize(img, (c.img_height, c.img_width))
-                imgs.append(img)
-            imgs = np.stack(imgs)
-            imgs = resample_imgs(imgs, c.n_frames)
-            
+            img_paths = find_files(os.path.join(c.path_to_data, 'images/', path), '*.png')
+            imgs = process_imgs(img_paths, c, augmentation=True)
             img_inputs[b] = imgs.astype(float)/127.5 - 1
 
             # landmark_inputs
-            landmarks = []
-            for img in imgs:
-                landmarks.append(np.reshape(land.gen_landmark(img, path)[1], [-1]))
-            landmarks_delta = []
-            for i in range(len(landmarks) - 1):
-                landmarks_delta.append(landmarks[i] - landmarks[i+1])
-            landmarks_delta.append(landmarks[-1] - landmarks[0])
-            landmark_inputs[b] = np.hstack([np.stack(landmarks), np.stack(landmarks_delta)])
+            landmark_inputs[b] = process_landmarks(imgs, path)
 
             # out_emotion
             emo_path = find_files(os.path.join(c.path_to_data, 'emotions/', path), '*.txt')
@@ -193,12 +233,20 @@ def generator(c, paths):
 
 
 def get_generators(c):
-    path = os.path.join(c.path_to_data, 'images/')
-    paths = [os.path.join(g, l) for g in os.listdir(path) for l in os.listdir(path+g)
-        if os.path.isdir(os.path.join(path, g, l))]
-    edge = int(len(paths)*c.test_size)
-    train_paths = paths[:-edge]
-    test_paths = paths[-edge:]
+    if os.path.isfile(c.saved_paths):
+        with open(c.saved_paths, 'rb') as f:
+            train_paths, test_paths = pickle.load(f)
+        print('Paths were loaded')
+    else:
+        path = os.path.join(c.path_to_data, 'images/')
+        paths = [os.path.join(g, l) for g in os.listdir(path) for l in os.listdir(path+g)
+            if os.path.isdir(os.path.join(path, g, l))]
+        edge = int(len(paths)*c.test_size)
+        train_paths = paths[:-edge]
+        test_paths = paths[-edge:]
+        with open(c.saved_paths, 'wb') as f:
+            pickle.dump((train_paths, test_paths), f)
+        print('New paths were generated')
     train_gen = generator(c, train_paths)
     test_gen = generator(c, test_paths)
     return train_gen, test_gen
@@ -220,6 +268,7 @@ def masked_acc(y_true, y_pred):
     return tf.reduce_sum(acc*mask)/(tf.reduce_sum(mask) + 1e-6)
 
 
+#------------------------- Augmentation ---------------------------------------
 
 ################################################################################
 

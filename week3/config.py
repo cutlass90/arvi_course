@@ -1,13 +1,20 @@
 from tools import Config
 
 config = Config(
+    # augmentation
+    sequence_change = 0.3,
+    zoom_range = (1.2, 1.2),
+    random_shear = 0.2,
+    random_rotation = 20,
     # data config
+    rectangle_imgs = True,
     path_to_data='./facs',
+    saved_paths='./paths.pkl',
     # path_to_data='/mnt/course/datasets/facs/',
     test_size = 0.1,
-    batch_size = 8,
-    img_height = 240,
-    img_width = 320,
+    batch_size = 16,
+    img_height = 224,
+    img_width = 224,
     n_emotions = 7,
     n_action_units = 41, # target action units
     landmark_size = 2*136, # number of features that provide dlib + delta coding
