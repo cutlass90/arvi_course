@@ -208,7 +208,7 @@ def masked_loss(y_true, y_pred):
     # when y_true == 0 mask loss
     loss = K.categorical_crossentropy(y_true, y_pred)
     mask = tf.cast(tf.greater(tf.reduce_sum(y_true, axis=1), 0.5), tf.float32)
-    mask = tf.Print(mask, [mask, loss], message='\n\n!!!mask, loss', summarize=20)
+    # mask = tf.Print(mask, [mask, loss], message='\n\n!!!mask, loss', summarize=20)
     return tf.reduce_mean(mask*loss)
 
 def masked_acc(y_true, y_pred):
@@ -216,7 +216,7 @@ def masked_acc(y_true, y_pred):
     acc = K.cast(K.equal(K.argmax(y_true, axis=-1), K.argmax(y_pred, axis=-1)),
            K.floatx())
     mask = tf.cast(tf.greater(tf.reduce_sum(y_true, axis=1), 0.5), tf.float32)
-    mask = tf.Print(mask, [mask, acc], message='\n\n!!!mask, acc', summarize=20)
+    # mask = tf.Print(mask, [mask, acc], message='\n\n!!!mask, acc', summarize=20)
     return tf.reduce_sum(acc*mask)/(tf.reduce_sum(mask) + 1e-6)
 
 
