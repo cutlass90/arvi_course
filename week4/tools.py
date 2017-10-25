@@ -1,0 +1,252 @@
+import os
+import pickle
+import fnmatch
+import math
+import random
+from operator import itemgetter
+from collections import defaultdict
+from functools import partial
+
+import tensorflow as tf
+from keras import backend as K
+from keras.layers import Conv2DTranspose
+from keras.legacy import interfaces
+from keras.engine import InputSpec
+from keras.utils import conv_utils
+
+
+import numpy as np
+from scipy.ndimage import imread
+from keras.layers import Input, Reshape
+from keras import layers
+from keras.layers import Dense
+from keras.preprocessing import image
+from keras_vggface.utils import preprocess_input
+from scipy.misc import imresize
+from keras import backend as K
+import tensorflow as tf
+from scipy.ndimage import imread
+from scipy.misc import imsave, imresize, toimage
+from scipy.signal import resample
+from scipy import ndimage as nd
+import pandas as pd
+from PIL import Image
+
+
+
+
+def _get_fields(attr):
+    if isinstance(attr, Config):
+        return [getattr(attr, k) for k in
+                sorted(attr.__dict__.keys())]
+    else:
+        return [attr]
+
+
+class Config:
+
+    def __init__(self, **kwargs):
+        """ Init config class with local configurations provided via kwargs.
+            Provide scope field to mark config as main.
+        """
+
+        for name, attr in kwargs.items():
+            setattr(self, name, attr)
+
+        if 'scope' in kwargs.keys():
+            self.is_main = True
+
+            # collect all fields from all configs and regular kwargs
+            fields = (_get_fields(attr) for name, attr in
+                      sorted(kwargs.items(), key=itemgetter(0))
+                      if not name == "scope")
+
+            self.identifier_fields = sum(fields, [])
+
+    @property
+    def identifier(self):
+        if self.is_main:
+            fields = "_".join(self._process_attr(name)
+                              for name in self.identifier_fields)
+            return self.scope + "_" + fields
+        else:
+            raise AttributeError("There is no field `scope` in this config")
+
+    def _process_attr(self, attr):
+        if isinstance(attr, (int, float, str)):
+            return str(attr)
+        elif isinstance(attr, (list, tuple)):
+            return 'x'.join(str(a) for a in attr)
+        elif isinstance(attr, bool):
+            if attr:
+                return 'YES{}'.format(str(attr))
+            else:
+                return 'NO{}'.format(str(attr))
+        else:
+            raise TypeError('Wrong dtype.')
+
+
+def find_files(path: str, filename_pattern: str, sort: bool = True) -> list:
+    """Finds all files of type `filename_pattern`
+    in directory and subdirectories paths.
+
+    Args:
+        path: str, directory to search files.
+        filename_pattern: regular expression to specify file type.
+        sort: bool, whether to sort files list. Defaults to True.
+
+    Returns: list of found files.
+    """
+    files = list()
+    for root, _, filenames in os.walk(path):
+        for filename in fnmatch.filter(filenames, filename_pattern):
+            files.append(os.path.join(root, filename))
+    if sort:
+        files.sort()
+    return files
+
+def get_file_name(filepath: str) -> str:
+    """Returns file name without extension and directory
+
+    Args:
+        filepath: str, filepath.
+
+    Returns:
+        str, filename
+    """
+
+    f = os.path.basename(filepath)
+    filename, _ = os.path.splitext(f)
+
+    return filename
+
+def except_catcher(gen):
+    while True:
+        try:
+            i=0
+            data = next(gen)
+            yield data
+        except Exception as e:
+            i += 1
+            print('Ups! Something wrong!', e)
+            if i > 100:
+                print('Can not yield data 100 times.')
+                raise Exception('Sumething realy wrong!')
+
+def fake_generator(c):
+    while True:
+        img_inputs = np.ones([c.batch_size, c.n_frames, c.img_height, c.img_width, 1])
+        landmark_inputs = np.ones([c.batch_size, c.n_frames, c.landmark_size])
+        out_emotion = np.zeros([c.batch_size, c.n_emotions])
+        out_emotion[:, 0] = 1
+        out_au = np.zeros([c.batch_size, c.n_action_units])
+        out_au[:, 0] = 1
+        yield ({'img_inputs': img_inputs, 'landmark_inputs': landmark_inputs},
+            {'out_emotion': out_emotion, 'out_au': out_au})
+
+
+
+class Conv1DTranspose(Conv2DTranspose):
+    def __init__(self, filters,
+                 kernel_size,
+                 strides=1,
+                 padding='valid',
+                 data_format=None,
+                 activation=None,
+                 use_bias=True,
+                 kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros',
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
+                 kernel_constraint=None,
+                 bias_constraint=None,
+                 **kwargs):
+        super(Conv1DTranspose, self).__init__(
+            filters,
+            kernel_size=(kernel_size, 1),
+            strides=(strides, 1),
+            padding=padding,
+            data_format=data_format,
+            activation=activation,
+            use_bias=use_bias,
+            kernel_initializer=kernel_initializer,
+            bias_initializer=bias_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer,
+            kernel_constraint=kernel_constraint,
+            bias_constraint=bias_constraint,
+            **kwargs)
+        self.input_spec = InputSpec(ndim=3)
+    
+    def call(self, inputs):
+        x = K.expand_dims(inputs, axis=2)
+        x = super().call(x)
+        sh = list(self.compute_output_shape(inputs.get_shape().as_list()))
+        sh[0] = -1
+        out = tf.reshape(x, sh)
+        return out
+
+    def build(self, input_shape):
+        if len(input_shape) != 3:
+            raise ValueError('Inputs should have rank ' +
+                             str(3) +
+                             '; Received input shape:', str(input_shape))
+        if self.data_format == 'channels_first':
+            channel_axis = 1
+        else:
+            channel_axis = -1
+        if input_shape[channel_axis] is None:
+            raise ValueError('The channel dimension of the inputs '
+                             'should be defined. Found `None`.')
+        input_dim = input_shape[channel_axis]
+        kernel_shape = self.kernel_size + (self.filters, input_dim)
+
+        self.kernel = self.add_weight(shape=kernel_shape,
+                                      initializer=self.kernel_initializer,
+                                      name='kernel',
+                                      regularizer=self.kernel_regularizer,
+                                      constraint=self.kernel_constraint)
+        if self.use_bias:
+            self.bias = self.add_weight(shape=(self.filters,),
+                                        initializer=self.bias_initializer,
+                                        name='bias',
+                                        regularizer=self.bias_regularizer,
+                                        constraint=self.bias_constraint)
+        else:
+            self.bias = None
+        # Set input spec.
+        self.input_spec = InputSpec(ndim=3, axes={channel_axis: input_dim})
+        self.built = True
+    
+    def compute_output_shape(self, input_shape):
+        output_shape = list(input_shape)
+        output_shape = output_shape[:2] + [1] + output_shape[-1:]
+        if self.data_format == 'channels_first':
+            c_axis, h_axis, w_axis = 1, 2, 3
+        else:
+            c_axis, h_axis, w_axis = 3, 1, 2
+
+        kernel_h, kernel_w = self.kernel_size
+        stride_h, stride_w = self.strides
+
+        output_shape[c_axis] = self.filters
+        output_shape[h_axis] = conv_utils.deconv_length(
+            output_shape[h_axis], stride_h, kernel_h, self.padding)
+        output_shape[w_axis] = conv_utils.deconv_length(
+            output_shape[w_axis], stride_w, kernel_w, self.padding)
+        output_shape = tuple(output_shape)
+        output_shape = (output_shape[0], output_shape[1], output_shape[3])
+        return output_shape
+    
+################################################################################
+
+    
+
+if __name__ == '__main__':
+    inp = Input(shape=(100,))
+    inp = Dense(200)(inp)
+    inp = Reshape([100, 2])(inp)
+    out = Conv1DTranspose(10, 3, 2, padding='same')(inp)
+    print(out)
