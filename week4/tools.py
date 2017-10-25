@@ -9,7 +9,7 @@ from functools import partial
 
 import tensorflow as tf
 from keras import backend as K
-from keras.layers import Conv2DTranspose
+from keras.layers import Conv2DTranspose, Lambda, Conv1D
 from keras.legacy import interfaces
 from keras.engine import InputSpec
 from keras.utils import conv_utils
@@ -17,9 +17,10 @@ from keras.utils import conv_utils
 
 import numpy as np
 from scipy.ndimage import imread
-from keras.layers import Input, Reshape
+from keras.layers import Input, Reshape, Flatten
 from keras import layers
-from keras.layers import Dense
+from keras.models import Model
+from keras.layers import Dense, Reshape
 from keras.preprocessing import image
 from keras_vggface.utils import preprocess_input
 from scipy.misc import imresize
@@ -144,101 +145,111 @@ def fake_generator(c):
         yield ({'img_inputs': img_inputs, 'landmark_inputs': landmark_inputs},
             {'out_emotion': out_emotion, 'out_au': out_au})
 
+def Conv1DTranspose(inputs, filters, kernel_size, strides, padding):
+    input_sh = inputs.get_shape().as_list()
+    x = Reshape([input_sh[1], 1, input_sh[2]])(inputs)
+    transposer = Conv2DTranspose(filters=filters,
+                        kernel_size=(kernel_size, 1),
+                        strides=(strides, 1),
+                        padding=padding)
+    x2 = transposer(x)
+    out_sh = transposer.compute_output_shape([input_sh[0], input_sh[1], 1, input_sh[2]])
+    out = Reshape([out_sh[1], out_sh[3]])(x2)
+    return out
 
-
-class Conv1DTranspose(Conv2DTranspose):
-    def __init__(self, filters,
-                 kernel_size,
-                 strides=1,
-                 padding='valid',
-                 data_format=None,
-                 activation=None,
-                 use_bias=True,
-                 kernel_initializer='glorot_uniform',
-                 bias_initializer='zeros',
-                 kernel_regularizer=None,
-                 bias_regularizer=None,
-                 activity_regularizer=None,
-                 kernel_constraint=None,
-                 bias_constraint=None,
-                 **kwargs):
-        super(Conv1DTranspose, self).__init__(
-            filters,
-            kernel_size=(kernel_size, 1),
-            strides=(strides, 1),
-            padding=padding,
-            data_format=data_format,
-            activation=activation,
-            use_bias=use_bias,
-            kernel_initializer=kernel_initializer,
-            bias_initializer=bias_initializer,
-            kernel_regularizer=kernel_regularizer,
-            bias_regularizer=bias_regularizer,
-            activity_regularizer=activity_regularizer,
-            kernel_constraint=kernel_constraint,
-            bias_constraint=bias_constraint,
-            **kwargs)
-        self.input_spec = InputSpec(ndim=3)
+# class Conv1DTranspose(Conv2DTranspose):
+#     def __init__(self, filters,
+#                  kernel_size,
+#                  strides=1,
+#                  padding='valid',
+#                  data_format=None,
+#                  activation=None,
+#                  use_bias=True,
+#                  kernel_initializer='glorot_uniform',
+#                  bias_initializer='zeros',
+#                  kernel_regularizer=None,
+#                  bias_regularizer=None,
+#                  activity_regularizer=None,
+#                  kernel_constraint=None,
+#                  bias_constraint=None,
+#                  **kwargs):
+#         super().__init__(
+#             filters,
+#             kernel_size=(kernel_size, 1),
+#             strides=(strides, 1),
+#             padding=padding,
+#             data_format=data_format,
+#             activation=activation,
+#             use_bias=use_bias,
+#             kernel_initializer=kernel_initializer,
+#             bias_initializer=bias_initializer,
+#             kernel_regularizer=kernel_regularizer,
+#             bias_regularizer=bias_regularizer,
+#             activity_regularizer=activity_regularizer,
+#             kernel_constraint=kernel_constraint,
+#             bias_constraint=bias_constraint,
+#             **kwargs)
+#         self.input_spec = InputSpec(ndim=3)
     
-    def call(self, inputs):
-        x = K.expand_dims(inputs, axis=2)
-        x = super().call(x)
-        sh = list(self.compute_output_shape(inputs.get_shape().as_list()))
-        sh[0] = -1
-        out = tf.reshape(x, sh)
-        return out
+#     def call(self, inputs):
+#         x = K.expand_dims(inputs, axis=2)
+#         x = super().call(x)
+#         sh = list(self.compute_output_shape(inputs.get_shape().as_list()))
+#         sh[0] = -1
+#         out = K.reshape(x, sh)
+#         return out
 
-    def build(self, input_shape):
-        if len(input_shape) != 3:
-            raise ValueError('Inputs should have rank ' +
-                             str(3) +
-                             '; Received input shape:', str(input_shape))
-        if self.data_format == 'channels_first':
-            channel_axis = 1
-        else:
-            channel_axis = -1
-        if input_shape[channel_axis] is None:
-            raise ValueError('The channel dimension of the inputs '
-                             'should be defined. Found `None`.')
-        input_dim = input_shape[channel_axis]
-        kernel_shape = self.kernel_size + (self.filters, input_dim)
+#     def build(self, input_shape):
+#         if len(input_shape) != 3:
+#             raise ValueError('Inputs should have rank ' +
+#                              str(3) +
+#                              '; Received input shape:', str(input_shape))
+#         if self.data_format == 'channels_first':
+#             channel_axis = 1
+#         else:
+#             channel_axis = -1
+#         if input_shape[channel_axis] is None:
+#             raise ValueError('The channel dimension of the inputs '
+#                              'should be defined. Found `None`.')
+#         input_dim = input_shape[channel_axis]
+#         kernel_shape = self.kernel_size + (self.filters, input_dim)
 
-        self.kernel = self.add_weight(shape=kernel_shape,
-                                      initializer=self.kernel_initializer,
-                                      name='kernel',
-                                      regularizer=self.kernel_regularizer,
-                                      constraint=self.kernel_constraint)
-        if self.use_bias:
-            self.bias = self.add_weight(shape=(self.filters,),
-                                        initializer=self.bias_initializer,
-                                        name='bias',
-                                        regularizer=self.bias_regularizer,
-                                        constraint=self.bias_constraint)
-        else:
-            self.bias = None
-        # Set input spec.
-        self.input_spec = InputSpec(ndim=3, axes={channel_axis: input_dim})
-        self.built = True
+#         self.kernel = self.add_weight(shape=kernel_shape,
+#                                       initializer=self.kernel_initializer,
+#                                       name='kernel',
+#                                       regularizer=self.kernel_regularizer,
+#                                       constraint=self.kernel_constraint)
+#         if self.use_bias:
+#             self.bias = self.add_weight(shape=(self.filters,),
+#                                         initializer=self.bias_initializer,
+#                                         name='bias',
+#                                         regularizer=self.bias_regularizer,
+#                                         constraint=self.bias_constraint)
+#         else:
+#             self.bias = None
+#         # Set input spec.
+#         self.input_spec = InputSpec(ndim=3, axes={channel_axis: input_dim})
+#         self.built = True
     
-    def compute_output_shape(self, input_shape):
-        output_shape = list(input_shape)
-        output_shape = output_shape[:2] + [1] + output_shape[-1:]
-        if self.data_format == 'channels_first':
-            c_axis, h_axis, w_axis = 1, 2, 3
-        else:
-            c_axis, h_axis, w_axis = 3, 1, 2
+#     def compute_output_shape(self, input_shape):
+#         output_shape = list(input_shape)
+#         output_shape = output_shape[:2] + [1] + output_shape[-1:]
+#         if self.data_format == 'channels_first':
+#             c_axis, h_axis, w_axis = 1, 2, 3
+#         else:
+#             c_axis, h_axis, w_axis = 3, 1, 2
 
-        kernel_h, kernel_w = self.kernel_size
-        stride_h, stride_w = self.strides
+#         kernel_h, kernel_w = self.kernel_size
+#         stride_h, stride_w = self.strides
 
-        output_shape[c_axis] = self.filters
-        output_shape[h_axis] = conv_utils.deconv_length(
-            output_shape[h_axis], stride_h, kernel_h, self.padding)
-        output_shape[w_axis] = conv_utils.deconv_length(
-            output_shape[w_axis], stride_w, kernel_w, self.padding)
-        output_shape = tuple(output_shape)
-        output_shape = (output_shape[0], output_shape[1], output_shape[3])
-        return output_shape
+#         output_shape[c_axis] = self.filters
+#         output_shape[h_axis] = conv_utils.deconv_length(
+#             output_shape[h_axis], stride_h, kernel_h, self.padding)
+#         output_shape[w_axis] = conv_utils.deconv_length(
+#             output_shape[w_axis], stride_w, kernel_w, self.padding)
+#         output_shape = tuple(output_shape)
+#         output_shape = (output_shape[0], output_shape[1], output_shape[3])
+#         return output_shape
     
 ################################################################################
 
@@ -246,7 +257,15 @@ class Conv1DTranspose(Conv2DTranspose):
 
 if __name__ == '__main__':
     inp = Input(shape=(100,))
-    inp = Dense(200)(inp)
-    inp = Reshape([100, 2])(inp)
-    out = Conv1DTranspose(10, 3, 2, padding='same')(inp)
-    print(out)
+    x = Dense(200)(inp)
+    x = Reshape([100, 2])(x)
+    # out = Conv1DTranspose(10, 3, 2, padding='same')(x)
+    x = Conv1DTranspose(x, 10, 3, 1, 'same')
+    x = Conv1D(1, 1, strides=1, padding='same')(x)
+    x = Flatten()(x)
+    out = Dense(20)(x)
+    model = Model(inp, out)
+    model.compile(loss='binary_crossentropy',
+                  optimizer='adam')
+    model.fit(x=np.ones([100, 100]),
+              y=np.ones([100, 20]))
