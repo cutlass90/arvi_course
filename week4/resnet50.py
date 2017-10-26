@@ -20,7 +20,7 @@ from keras.layers import Flatten
 from keras.layers import Conv1D
 from keras.layers import AveragePooling1D
 from keras.layers import GlobalAveragePooling1D
-from keras.layers import BatchNormalization, Reshape
+from keras.layers import BatchNormalization, Reshape, Concatenate
 from keras.models import Model
 from keras import backend as K
 from keras.engine.topology import get_source_inputs
@@ -57,9 +57,9 @@ def identity_block(input_tensor, kernel_size, filters, stage, block):
     bn_name_base = 'bn' + str(stage) + block + '_branch'
 
     if input_tensor.get_shape().as_list()[-1] != filters3:
-        print('convert ', input_tensor.get_shape().as_list()[-1], 'to', filters3)
-        input_tensor = Conv1D(filters3, 1, name=conv_name_base + '2a')(input_tensor)
-        input_tensor = BatchNormalization(name=bn_name_base + '2a')(input_tensor)
+        # print('convert ', input_tensor.get_shape().as_list()[-1], 'to', filters3)
+        input_tensor = Conv1D(filters3, 1, name=conv_name_base + 'conv')(input_tensor)
+        input_tensor = BatchNormalization(name=bn_name_base + 'conv')(input_tensor)
         input_tensor = LeakyReLU(alpha=0.3)(input_tensor)
 
 
@@ -137,21 +137,35 @@ def deconv_block(input_tensor, kernel_size, filters, stage, block, strides=2):
     conv_name_base = 'res' + str(stage) + block + '_branch'
     bn_name_base = 'bn' + str(stage) + block + '_branch'
 
-    x = Conv1DTranspose(filters1, 1, strides=strides,
-               name=conv_name_base + '2a')(input_tensor)
+    x = Conv1DTranspose(inputs=input_tensor,
+                        filters=filters1,
+                        kernel_size=1,
+                        strides=strides,
+                        padding='same')
+               
     x = BatchNormalization(name=bn_name_base + '2a')(x)
     x = LeakyReLU(alpha=0.3)(x)
 
-    x = Conv1DTranspose(filters2, kernel_size, padding='same',
-               name=conv_name_base + '2b')(x)
+    x = Conv1DTranspose(inputs=x,
+                        filters=filters2,
+                        kernel_size=kernel_size,
+                        strides=1,
+                        padding='same')
     x = BatchNormalization(name=bn_name_base + '2b')(x)
     x = LeakyReLU(alpha=0.3)(x)
 
-    x = Conv1DTranspose(filters3, 1, name=conv_name_base + '2c')(x)
+    x = Conv1DTranspose(inputs=x,
+                        filters=filters3,
+                        kernel_size=kernel_size,
+                        strides=1,
+                        padding='same')
     x = BatchNormalization(name=bn_name_base + '2c')(x)
 
-    shortcut = Conv1DTranspose(filters3, 1, strides=strides,
-                      name=conv_name_base + '1')(input_tensor)
+    shortcut = Conv1DTranspose(inputs=input_tensor,
+                        filters=filters3,
+                        kernel_size=kernel_size,
+                        strides=strides,
+                        padding='same')
     shortcut = BatchNormalization(name=bn_name_base + '1')(shortcut)
 
     x = layers.add([x, shortcut])
@@ -197,11 +211,12 @@ def ResNetGenerator(c):
         64, 7, strides=2, padding='same', name='conv1')(signal_input)
     x = BatchNormalization(name='bn_conv1')(x)
     x = LeakyReLU(alpha=0.3)(x)
-    print(c.audio_size, '->', x.get_shape().as_list())
+    print('COMPRESSION')
+    print(c.audio_size, '-> ', x.get_shape().as_list())
 
     for i in range(1, c.n_compress_block+1):
         net[i] = x
-        print(x.get_shape().as_list(), '->', end='')
+        print(x.get_shape().as_list(), '-> ', end='')
         x = conv_block(x, 3,
                        [i**2*c.convo_size, i**2*c.convo_size, 4*i**2*c.convo_size],
                        stage=i, block='a')
@@ -213,29 +228,37 @@ def ResNetGenerator(c):
                            [i**2*c.convo_size, i**2*c.convo_size, 4*i**2*c.convo_size],
                            stage=i, block='c')
     [print(k, v) for k, v in net.items()]
-    print('\nAfter compression',x)
+    print('\nAfter compression', x, '\n')
     
     # DECOMPRESS
+    print('DECOMPRESSION')
     for i in range(c.n_compress_block, 0, -1):
         print(i, end=' ')
-        print(x.get_shape().as_list(), '->', end='')
+        print(x.get_shape().as_list(), '-> ', end='')
         x = deconv_block(x, 3,
                        [i**2*c.convo_size, i**2*c.convo_size, 4*i**2*c.convo_size],
-                       stage=i, block='a')
-        print(x.get_shape().as_list())    
-        x = tf.concat([net[i], x], axis=2)
+                       stage=i, block='a_incr')
+        print(x.get_shape().as_list())
+        x = Concatenate(axis=2)([net[i], x])
         x = identity_block(x, 3,
                            [i**2*c.convo_size, i**2*c.convo_size, 4*i**2*c.convo_size],
-                           stage=i, block='b')
+                           stage=i, block='b_incr')
         x = identity_block(x, 3,
                            [i**2*c.convo_size, i**2*c.convo_size, 4*i**2*c.convo_size],
-                           stage=i, block='c')
+                           stage=i, block='c_incr')
+    print(x.get_shape().as_list(), '-> ', end='')
+    x = deconv_block(x, 3,
+                     [i**2*c.convo_size, i**2*c.convo_size, 4*i**2*c.convo_size],
+                     stage=42, block='a_incr')
+    x = identity_block(x, 3,
+                       [i**2*c.convo_size, i**2*c.convo_size, 4*i**2*c.convo_size],
+                       stage=42, block='c_incr')
+    print(x.get_shape().as_list())
     x = Conv1D(1, 1, strides=1, padding='same')(x)
-    print(x)
-    x = Reshape((-1,))(x)
-    print(x)
+    signal_output = Reshape((-1,))(x)
+    print('Recovered tensor', x)
     # Create model.
-    model = Model(signal_input, x, name='resnet50')
+    model = Model(signal_input, signal_output)
 
     return model
 
