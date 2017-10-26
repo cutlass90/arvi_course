@@ -177,6 +177,7 @@ def ResNetDiscriminator(c):
     Returns
         A Keras model instance.
     """
+    DICT_SIZE = len(c.char_to_class)
     signal_input = Input(shape=(c.audio_size, 1))
     x = Conv1D(
         64, 7, strides=2, padding='same', name='conv1')(signal_input)
@@ -192,8 +193,35 @@ def ResNetDiscriminator(c):
         x = identity_block(x, 3,
                            [i**2*c.convo_size, i**2*c.convo_size, 4*i**2*c.convo_size],
                            stage=i, block='c')
+    print('x', x)
+    
+    out_chars = conv_block(x, 3,
+                   [8**2*c.convo_size, 8**2*c.convo_size, 4*8**2*c.convo_size],
+                   stage=42, block='a')
+    out_chars = conv_block(out_chars, 3,
+                   [7**2*c.convo_size, 7**2*c.convo_size, 4*7**2*c.convo_size],
+                   stage=43, block='a')
+    out_chars = Conv1D(DICT_SIZE, 1, padding='same')(out_chars)
+    out_chars = Activation('softmax')(out_chars)
+    print('out_chars', out_chars)
+
+    true_fake_many = identity_block(x, 3,
+                           [256, 256, 4*256],
+                           stage=44, block='c')
+    true_fake_many = Conv1D(1, 1)(true_fake_many)
+    true_fake_many = Reshape([256,])(true_fake_many)
+    true_fake_many = Activation('sigmoid')(true_fake_many)
+    print('true_fake_many', true_fake_many)
+
+    true_fake_1 = Conv1D(1024, 3, strides=1)(x)
+    true_fake_1 = Conv1D(1, 1)(true_fake_1)
+    true_fake_1 = GlobalAveragePooling1D()(true_fake_1)
+    true_fake_1 = Activation('sigmoid')(true_fake_1)
+    print('true_fake_1', true_fake_1)
     # Create model.
-    model = Model(signal_input, x, name='resnet50')
+    model = Model(inputs=signal_input, outputs=[out_chars,
+                                                true_fake_many,
+                                                true_fake_1])
 
     return model
 
@@ -255,8 +283,9 @@ def ResNetGenerator(c):
                        stage=42, block='c_incr')
     print(x.get_shape().as_list())
     x = Conv1D(1, 1, strides=1, padding='same')(x)
-    signal_output = Reshape((-1,))(x)
-    print('Recovered tensor', x)
+    x = Reshape((-1,))(x)
+    signal_output = Activation('tanh')(x)
+    print('Recovered tensor', signal_output)
     # Create model.
     model = Model(signal_input, signal_output)
 
