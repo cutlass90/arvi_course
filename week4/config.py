@@ -1,9 +1,14 @@
 from tools import Config
 
+# Notes for self:
+# audio signal must be scaled from -1 to 1
+# ASSUME THAT 1 - IS TRUE SAMPLE AND 0 - IS FAKE SAMPLE
+
 config = Config(
-    audio_size = 2**18, #16 sec
+    batch_size = 1,
+    audio_size = 2**17, #8 sec
     text_size = 64,
-    n_compress_block = 9,
+    n_compress_block = 8,
     convo_size = 8, # initial number of filters in convo
     char_to_class = {' ': 0,
                      'a': 1,

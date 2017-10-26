@@ -134,17 +134,6 @@ def except_catcher(gen):
                 print('Can not yield data 100 times.')
                 raise Exception('Sumething realy wrong!')
 
-def fake_generator(c):
-    while True:
-        img_inputs = np.ones([c.batch_size, c.n_frames, c.img_height, c.img_width, 1])
-        landmark_inputs = np.ones([c.batch_size, c.n_frames, c.landmark_size])
-        out_emotion = np.zeros([c.batch_size, c.n_emotions])
-        out_emotion[:, 0] = 1
-        out_au = np.zeros([c.batch_size, c.n_action_units])
-        out_au[:, 0] = 1
-        yield ({'img_inputs': img_inputs, 'landmark_inputs': landmark_inputs},
-            {'out_emotion': out_emotion, 'out_au': out_au})
-
 def Conv1DTranspose(inputs, filters, kernel_size, strides, padding):
     input_sh = inputs.get_shape().as_list()
     x = Reshape([input_sh[1], 1, input_sh[2]])(inputs)
@@ -157,6 +146,21 @@ def Conv1DTranspose(inputs, filters, kernel_size, strides, padding):
     out = Reshape([out_sh[1], out_sh[3]])(x2)
     return out
 
+def categorical_crossentropy_gan(y_true, y_pred):
+    """ Compute categorical_crossentropy for first half of batch:
+        from 0 to batch/2"""
+    loss = K.categorical_crossentropy(y_true, y_pred)
+    half = tf.cast(tf.shape(y_true)[0]/2, tf.int32)   
+    return tf.reduce_mean(loss[:half])
+
+
+def fake_generator(c):
+    DICT_SIZE = len(c.char_to_class)
+    while True:
+        real_signal = np.random.random_sample(size=[c.batch_size, c.audio_size])*2 - 1
+        fake_signal = np.random.random_sample(size=[c.batch_size, c.audio_size])*2 - 1
+        real_text = np.random.randint(0, 1, size=[c.batch_size, c.text_size, DICT_SIZE])
+        yield real_signal, fake_signal, real_text
 # class Conv1DTranspose(Conv2DTranspose):
 #     def __init__(self, filters,
 #                  kernel_size,

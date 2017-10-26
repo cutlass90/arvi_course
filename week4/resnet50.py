@@ -177,10 +177,12 @@ def ResNetDiscriminator(c):
     Returns
         A Keras model instance.
     """
+    print('#'*10, ' Create discriminator ', '#'*10)
     DICT_SIZE = len(c.char_to_class)
-    signal_input = Input(shape=(c.audio_size, 1))
+    signal_input = Input(shape=(c.audio_size,))
+    x = Reshape([c.audio_size, 1])(signal_input)
     x = Conv1D(
-        64, 7, strides=2, padding='same', name='conv1')(signal_input)
+        64, 7, strides=2, padding='same', name='conv1')(x)
     x = BatchNormalization(name='bn_conv1')(x)
     x = LeakyReLU(alpha=0.3)(x)
     for i in range(1, c.n_compress_block+1):
@@ -202,7 +204,7 @@ def ResNetDiscriminator(c):
                    [7**2*c.convo_size, 7**2*c.convo_size, 4*7**2*c.convo_size],
                    stage=43, block='a')
     out_chars = Conv1D(DICT_SIZE, 1, padding='same')(out_chars)
-    out_chars = Activation('softmax')(out_chars)
+    out_chars = Activation('softmax', name='out_chars')(out_chars)
     print('out_chars', out_chars)
 
     true_fake_many = identity_block(x, 3,
@@ -210,13 +212,13 @@ def ResNetDiscriminator(c):
                            stage=44, block='c')
     true_fake_many = Conv1D(1, 1)(true_fake_many)
     true_fake_many = Reshape([256,])(true_fake_many)
-    true_fake_many = Activation('sigmoid')(true_fake_many)
+    true_fake_many = Activation('sigmoid', name='true_fake_many')(true_fake_many)
     print('true_fake_many', true_fake_many)
 
     true_fake_1 = Conv1D(1024, 3, strides=1)(x)
     true_fake_1 = Conv1D(1, 1)(true_fake_1)
     true_fake_1 = GlobalAveragePooling1D()(true_fake_1)
-    true_fake_1 = Activation('sigmoid')(true_fake_1)
+    true_fake_1 = Activation('sigmoid', name='true_fake_1')(true_fake_1)
     print('true_fake_1', true_fake_1)
     # Create model.
     model = Model(inputs=signal_input, outputs=[out_chars,
@@ -231,12 +233,15 @@ def ResNetGenerator(c):
     Returns
         A Keras model instance.
     """
+    print('#'*10, ' Create generator ', '#'*10)
     net = {}
-    signal_input = Input(shape=(c.audio_size, 1))
+    signal_input = Input(shape=(c.audio_size,))
+    x = Reshape([c.audio_size, 1])(signal_input)
+
 
     # COMPRESS
     x = Conv1D(
-        64, 7, strides=2, padding='same', name='conv1')(signal_input)
+        64, 7, strides=2, padding='same', name='conv1')(x)
     x = BatchNormalization(name='bn_conv1')(x)
     x = LeakyReLU(alpha=0.3)(x)
     print('COMPRESSION')
